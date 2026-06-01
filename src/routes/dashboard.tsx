@@ -276,7 +276,7 @@ function ProjectsTab() {
             <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
               <span>Deadline: <span className="font-medium text-foreground">{p.deadline}</span></span>
               <div className="flex gap-2">
-                {(user.role === "admin" || user.role === "pm") && (
+                {canEdit && (
                   <button onClick={() => setEditing(p)} className="btn-ghost">Edit</button>
                 )}
                 {canDelete && <button onClick={() => remove(p.id)} className="btn-danger">Delete</button>}
