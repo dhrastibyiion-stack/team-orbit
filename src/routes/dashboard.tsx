@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth, useStore } from "@/lib/use-store";
 import { db, signOut, update, uid, rollback, type Role, type Project, type Task, type Leave, type User } from "@/lib/store";
+import { can, visibleTabs, defaultTabFor } from "@/lib/permissions";
 
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
@@ -12,21 +13,25 @@ type Tab = "members" | "projects" | "tasks" | "leaves";
 function Dashboard() {
   const user = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("tasks");
+  const tabs = useMemo<{ id: Tab; label: string }[]>(
+    () => (user ? visibleTabs(user.role) : []),
+    [user?.role],
+  );
+  const [tab, setTab] = useState<Tab>(user ? defaultTabFor(user.role) : "tasks");
 
   useEffect(() => {
     if (user === null) navigate({ to: "/login" });
   }, [user, navigate]);
 
+  useEffect(() => {
+    if (user && !tabs.some((t) => t.id === tab)) {
+      setTab(defaultTabFor(user.role));
+    }
+  }, [user?.role, tabs, tab]);
+
   if (!user) return null;
 
   const org = db.get().orgs.find((o) => o.id === user.orgId);
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "members", label: "Members" },
-    { id: "projects", label: "Projects" },
-    { id: "tasks", label: "Tasks" },
-    { id: "leaves", label: "Leave Requests" },
-  ];
 
   return (
     <div className="min-h-screen bg-background">
@@ -135,7 +140,8 @@ function MembersTab() {
   const users = useStore(() => db.get().users.filter((u) => u.orgId === user.orgId));
   const [open, setOpen] = useState(false);
 
-  const canEdit = user.role === "admin";
+  const canEdit = can.addMember(user.role);
+
 
   const remove = (id: string) => {
     if (id === user.id) return alert("You can't remove yourself.");
@@ -236,8 +242,9 @@ function ProjectsTab() {
   const [editing, setEditing] = useState<Project | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const canCreate = user.role === "admin";
-  const canDelete = user.role === "admin";
+  const canCreate = can.createProject(user.role);
+  const canDelete = can.deleteProject(user.role);
+  const canEdit = can.editProjectLimited(user.role);
 
   const remove = (id: string) => {
     if (!confirm("Delete this project and its tasks?")) return;
@@ -269,7 +276,7 @@ function ProjectsTab() {
             <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
               <span>Deadline: <span className="font-medium text-foreground">{p.deadline}</span></span>
               <div className="flex gap-2">
-                {(user.role === "admin" || user.role === "pm") && (
+                {canEdit && (
                   <button onClick={() => setEditing(p)} className="btn-ghost">Edit</button>
                 )}
                 {canDelete && <button onClick={() => remove(p.id)} className="btn-danger">Delete</button>}
@@ -352,7 +359,7 @@ function TasksTab() {
   const [editing, setEditing] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const canManage = user.role === "admin" || user.role === "pm";
+  const canManage = can.createTask(user.role);
 
   const updateStatus = (id: string, status: Task["status"]) => {
     update((d) => ({ ...d, tasks: d.tasks.map((t) => t.id === id ? { ...t, status } : t) }));
@@ -396,8 +403,9 @@ function TasksTab() {
                   <Td>
                     <select
                       value={t.status}
+                      disabled={!can.updateTaskStatus(user, t)}
                       onChange={(e) => updateStatus(t.id, e.target.value as Task["status"])}
-                      className="input h-8 py-0 text-xs"
+                      className="input h-8 py-0 text-xs disabled:opacity-60"
                     >
                       {["Pending", "In Progress", "Done"].map((s) => <option key={s}>{s}</option>)}
                     </select>
@@ -509,8 +517,8 @@ function LeavesTab() {
             {leaves.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">No leave requests.</td></tr>}
             {leaves.map((l) => {
               const u = users.find((x) => x.id === l.userId);
-              const canDelete = user.role === "admin" || user.role === "pm" || (l.userId === user.id && l.status === "Pending");
-              const canModerate = (user.role === "admin" || user.role === "pm") && l.status === "Pending";
+              const canDelete = can.deleteLeave(user, l);
+              const canModerate = can.moderateLeave(user.role) && l.status === "Pending";
               return (
                 <tr key={l.id} className="border-t border-border">
                   <Td>{u?.name ?? "—"}</Td>
