@@ -242,8 +242,9 @@ function ProjectsTab() {
   const [editing, setEditing] = useState<Project | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const canCreate = user.role === "admin";
-  const canDelete = user.role === "admin";
+  const canCreate = can.createProject(user.role);
+  const canDelete = can.deleteProject(user.role);
+  const canEdit = can.editProjectLimited(user.role);
 
   const remove = (id: string) => {
     if (!confirm("Delete this project and its tasks?")) return;
