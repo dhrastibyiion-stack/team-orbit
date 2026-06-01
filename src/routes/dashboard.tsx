@@ -403,8 +403,9 @@ function TasksTab() {
                   <Td>
                     <select
                       value={t.status}
+                      disabled={!can.updateTaskStatus(user, t)}
                       onChange={(e) => updateStatus(t.id, e.target.value as Task["status"])}
-                      className="input h-8 py-0 text-xs"
+                      className="input h-8 py-0 text-xs disabled:opacity-60"
                     >
                       {["Pending", "In Progress", "Done"].map((s) => <option key={s}>{s}</option>)}
                     </select>
