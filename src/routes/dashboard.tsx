@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth, useStore } from "@/lib/use-store";
 import { db, signOut, update, uid, rollback, type Role, type Project, type Task, type Leave, type User } from "@/lib/store";
+import { can, visibleTabs, defaultTabFor } from "@/lib/permissions";
 
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
@@ -12,21 +13,25 @@ type Tab = "members" | "projects" | "tasks" | "leaves";
 function Dashboard() {
   const user = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("tasks");
+  const tabs = useMemo<{ id: Tab; label: string }[]>(
+    () => (user ? visibleTabs(user.role) : []),
+    [user?.role],
+  );
+  const [tab, setTab] = useState<Tab>(user ? defaultTabFor(user.role) : "tasks");
 
   useEffect(() => {
     if (user === null) navigate({ to: "/login" });
   }, [user, navigate]);
 
+  useEffect(() => {
+    if (user && !tabs.some((t) => t.id === tab)) {
+      setTab(defaultTabFor(user.role));
+    }
+  }, [user?.role, tabs, tab]);
+
   if (!user) return null;
 
   const org = db.get().orgs.find((o) => o.id === user.orgId);
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "members", label: "Members" },
-    { id: "projects", label: "Projects" },
-    { id: "tasks", label: "Tasks" },
-    { id: "leaves", label: "Leave Requests" },
-  ];
 
   return (
     <div className="min-h-screen bg-background">
