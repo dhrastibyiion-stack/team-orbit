@@ -140,7 +140,8 @@ function MembersTab() {
   const users = useStore(() => db.get().users.filter((u) => u.orgId === user.orgId));
   const [open, setOpen] = useState(false);
 
-  const canEdit = user.role === "admin";
+  const canEdit = can.addMember(user.role);
+
 
   const remove = (id: string) => {
     if (id === user.id) return alert("You can't remove yourself.");
