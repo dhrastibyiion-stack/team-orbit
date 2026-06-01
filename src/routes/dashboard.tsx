@@ -517,8 +517,8 @@ function LeavesTab() {
             {leaves.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">No leave requests.</td></tr>}
             {leaves.map((l) => {
               const u = users.find((x) => x.id === l.userId);
-              const canDelete = user.role === "admin" || user.role === "pm" || (l.userId === user.id && l.status === "Pending");
-              const canModerate = (user.role === "admin" || user.role === "pm") && l.status === "Pending";
+              const canDelete = can.deleteLeave(user, l);
+              const canModerate = can.moderateLeave(user.role) && l.status === "Pending";
               return (
                 <tr key={l.id} className="border-t border-border">
                   <Td>{u?.name ?? "—"}</Td>
