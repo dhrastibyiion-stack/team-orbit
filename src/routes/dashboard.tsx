@@ -359,7 +359,7 @@ function TasksTab() {
   const [editing, setEditing] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const canManage = user.role === "admin" || user.role === "pm";
+  const canManage = can.createTask(user.role);
 
   const updateStatus = (id: string, status: Task["status"]) => {
     update((d) => ({ ...d, tasks: d.tasks.map((t) => t.id === id ? { ...t, status } : t) }));
