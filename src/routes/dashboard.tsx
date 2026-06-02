@@ -265,7 +265,7 @@ function MyWorkTab() {
         <div className="overflow-hidden rounded-md border border-border">
           <table className="w-full text-sm">
             <thead className="bg-secondary/50 text-xs uppercase tracking-wider text-muted-foreground">
-              <tr><Th>Task</Th><Th>Project</Th><Th>Status</Th><Th>Hours</Th><Th></Th></tr>
+              <tr><Th>Task</Th><Th>Project</Th><Th>Status</Th><Th>Hours</Th><Th>{" "}</Th></tr>
             </thead>
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No tasks match these filters.</td></tr>}
