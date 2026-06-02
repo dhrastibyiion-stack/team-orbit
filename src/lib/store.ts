@@ -6,6 +6,9 @@ export type Member = { id: string; userId: string; orgId: string };
 export type Project = { id: string; orgId: string; name: string; description: string; status: "Planning" | "Active" | "On Hold" | "Completed"; deadline: string };
 export type Task = { id: string; orgId: string; projectId: string; title: string; description: string; assigneeId: string; status: "Pending" | "In Progress" | "Done" };
 export type Leave = { id: string; orgId: string; userId: string; from: string; to: string; reason: string; status: "Pending" | "Approved" | "Rejected" };
+export type TaskComment = { id: string; orgId: string; taskId: string; userId: string; body: string; createdAt: number };
+export type TimeLog = { id: string; orgId: string; taskId: string; userId: string; hours: number; note: string; date: string; createdAt: number };
+export type Notification = { id: string; orgId: string; userId: string; kind: "task_assigned" | "leave_status" | "task_comment"; title: string; body: string; href?: string; read: boolean; createdAt: number };
 
 type DB = {
   users: User[];
@@ -13,18 +16,30 @@ type DB = {
   projects: Project[];
   tasks: Task[];
   leaves: Leave[];
+  comments: TaskComment[];
+  timeLogs: TimeLog[];
+  notifications: Notification[];
   sessionUserId: string | null;
 };
 
 const KEY = "flowdesk_db_v1";
 
-const empty: DB = { users: [], orgs: [], projects: [], tasks: [], leaves: [], sessionUserId: null };
+const empty: DB = { users: [], orgs: [], projects: [], tasks: [], leaves: [], comments: [], timeLogs: [], notifications: [], sessionUserId: null };
 
 function read(): DB {
   if (typeof window === "undefined") return empty;
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? JSON.parse(raw) : empty;
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw);
+    // forward-compatible defaults for older snapshots
+    return {
+      ...empty,
+      ...parsed,
+      comments: parsed.comments ?? [],
+      timeLogs: parsed.timeLogs ?? [],
+      notifications: parsed.notifications ?? [],
+    };
   } catch {
     return empty;
   }
@@ -57,7 +72,6 @@ export function signUp(input: { name: string; email: string; password: string; o
   const orgId = uid();
   const org: Org = { id: orgId, name: input.orgName, domain };
   const admin: User = { id: uid(), email: input.email, password: input.password, name: input.name, role: "admin", orgId };
-  // Seed demo PM + Dev with same domain
   const pm: User = { id: uid(), email: `pm@${domain}`, password: "demo123", name: "Priya Manager", role: "pm", orgId };
   const dev: User = { id: uid(), email: `dev@${domain}`, password: "demo123", name: "Dev Singh", role: "developer", orgId };
   const dev2: User = { id: uid(), email: `dev2@${domain}`, password: "demo123", name: "Alex Coder", role: "developer", orgId };
@@ -106,6 +120,16 @@ export function rollback() {
 // CRUD helpers
 export function update(fn: (d: DB) => DB) {
   write(fn(read()));
+}
+
+export function notify(input: { orgId: string; userId: string; kind: Notification["kind"]; title: string; body: string }) {
+  update((d) => ({
+    ...d,
+    notifications: [
+      { id: uid(), createdAt: Date.now(), read: false, ...input },
+      ...d.notifications,
+    ],
+  }));
 }
 
 export { uid };
