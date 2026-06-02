@@ -1,23 +1,21 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth, useStore } from "@/lib/use-store";
-import { db, signOut, update, uid, rollback, type Role, type Project, type Task, type Leave, type User } from "@/lib/store";
-import { can, visibleTabs, defaultTabFor } from "@/lib/permissions";
+import { db, signOut, update, uid, rollback, notify, type Role, type Project, type Task, type Leave, type User, type TaskComment, type TimeLog, type Notification } from "@/lib/store";
+import { can, visibleTabs, defaultTabFor, type TabId } from "@/lib/permissions";
 
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
 });
 
-type Tab = "members" | "projects" | "tasks" | "leaves";
-
 function Dashboard() {
   const user = useAuth();
   const navigate = useNavigate();
-  const tabs = useMemo<{ id: Tab; label: string }[]>(
+  const tabs = useMemo<{ id: TabId; label: string }[]>(
     () => (user ? visibleTabs(user.role) : []),
     [user?.role],
   );
-  const [tab, setTab] = useState<Tab>(user ? defaultTabFor(user.role) : "tasks");
+  const [tab, setTab] = useState<TabId>(user ? defaultTabFor(user.role) : "tasks");
 
   useEffect(() => {
     if (user === null) navigate({ to: "/login" });
@@ -57,7 +55,10 @@ function Dashboard() {
           ))}
         </nav>
         <div className="border-t border-sidebar-border p-4">
-          <div className="mb-2 text-sm font-medium">{user.name}</div>
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-sm font-medium">{user.name}</div>
+            <NotificationsBell />
+          </div>
           <div className="mb-3 text-xs text-sidebar-foreground/60">{user.email}</div>
           <RoleBadge role={user.role} />
           <button
@@ -89,7 +90,10 @@ function Dashboard() {
               <div className="h-7 w-7 rounded-md" style={{ background: "var(--gradient-primary)" }} />
               <span className="font-semibold">FlowDesk</span>
             </Link>
-            <button onClick={() => { signOut(); navigate({ to: "/login" }); }} className="btn-ghost h-8">Sign out</button>
+            <div className="flex items-center gap-2">
+              <NotificationsBell />
+              <button onClick={() => { signOut(); navigate({ to: "/login" }); }} className="btn-ghost h-8">Sign out</button>
+            </div>
           </div>
           <div className="flex gap-1 overflow-x-auto border-t border-border px-4 py-2">
             {tabs.map((t) => (
@@ -111,6 +115,7 @@ function Dashboard() {
               </p>
             </div>
 
+            {tab === "mywork" && <MyWorkTab />}
             {tab === "members" && <MembersTab />}
             {tab === "projects" && <ProjectsTab />}
             {tab === "tasks" && <TasksTab />}
@@ -134,6 +139,305 @@ function RoleBadge({ role, inline }: { role: Role; inline?: boolean }) {
   );
 }
 
+/* ---------------- NOTIFICATIONS ---------------- */
+function NotificationsBell() {
+  const user = useAuth()!;
+  const items = useStore(() =>
+    db.get().notifications.filter((n) => n.userId === user.id).slice(0, 30),
+  );
+  const unread = items.filter((n) => !n.read).length;
+  const [open, setOpen] = useState(false);
+
+  const markAll = () => {
+    update((d) => ({
+      ...d,
+      notifications: d.notifications.map((n) => n.userId === user.id ? { ...n, read: true } : n),
+    }));
+  };
+  const clearAll = () => {
+    update((d) => ({ ...d, notifications: d.notifications.filter((n) => n.userId !== user.id) }));
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="relative inline-flex h-8 w-8 items-center justify-center rounded-md border border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent/40"
+        title="Notifications"
+        aria-label="Notifications"
+      >
+        <span aria-hidden>🔔</span>
+        {unread > 0 && (
+          <span
+            className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold text-primary-foreground"
+            style={{ background: "var(--primary)" }}
+          >
+            {unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-md border border-border bg-card text-foreground shadow-lg">
+            <div className="flex items-center justify-between border-b border-border px-3 py-2">
+              <div className="text-sm font-semibold">Notifications</div>
+              <div className="flex gap-2 text-xs">
+                <button onClick={markAll} className="text-muted-foreground hover:text-foreground">Mark all read</button>
+                <button onClick={clearAll} className="text-muted-foreground hover:text-foreground">Clear</button>
+              </div>
+            </div>
+            <div className="max-h-96 overflow-y-auto">
+              {items.length === 0 && (
+                <div className="px-4 py-8 text-center text-xs text-muted-foreground">You're all caught up.</div>
+              )}
+              {items.map((n) => (
+                <div key={n.id} className={`border-b border-border px-3 py-2 text-sm ${n.read ? "" : "bg-secondary/50"}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-medium">{n.title}</div>
+                      <div className="text-xs text-muted-foreground">{n.body}</div>
+                    </div>
+                    <div className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(n.createdAt)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- MY WORK (developer dashboard) ---------------- */
+function MyWorkTab() {
+  const user = useAuth()!;
+  const allTasks = useStore(() => db.get().tasks.filter((t) => t.orgId === user.orgId && t.assigneeId === user.id));
+  const projects = useStore(() => db.get().projects.filter((p) => p.orgId === user.orgId));
+  const timeLogs = useStore(() => db.get().timeLogs.filter((l) => l.userId === user.id));
+
+  const [status, setStatus] = useState<"all" | Task["status"]>("all");
+  const [projectId, setProjectId] = useState<string>("all");
+  const [opening, setOpening] = useState<Task | null>(null);
+
+  const filtered = allTasks.filter((t) =>
+    (status === "all" || t.status === status) &&
+    (projectId === "all" || t.projectId === projectId),
+  );
+
+  const counts = {
+    total: allTasks.length,
+    pending: allTasks.filter((t) => t.status === "Pending").length,
+    inProgress: allTasks.filter((t) => t.status === "In Progress").length,
+    done: allTasks.filter((t) => t.status === "Done").length,
+  };
+  const totalHours = timeLogs.reduce((s, l) => s + l.hours, 0);
+  const thisWeek = timeLogs.filter((l) => Date.now() - new Date(l.date).getTime() < 7 * 864e5).reduce((s, l) => s + l.hours, 0);
+
+  const updateStatus = (id: string, s: Task["status"]) => {
+    update((d) => ({ ...d, tasks: d.tasks.map((t) => t.id === id ? { ...t, status: s } : t) }));
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <StatCard label="Assigned" value={counts.total} />
+        <StatCard label="Pending" value={counts.pending} accent="warning" />
+        <StatCard label="In Progress" value={counts.inProgress} accent="primary" />
+        <StatCard label="Done" value={counts.done} accent="success" />
+        <StatCard label="Hours this week" value={thisWeek.toFixed(1)} hint={`${totalHours.toFixed(1)} total`} />
+      </div>
+
+      <div className="card p-4">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">Filters:</span>
+          <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} className="input h-8 w-auto py-0 text-xs">
+            <option value="all">All statuses</option>
+            <option>Pending</option><option>In Progress</option><option>Done</option>
+          </select>
+          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="input h-8 w-auto py-0 text-xs">
+            <option value="all">All projects</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <div className="ml-auto text-xs text-muted-foreground">{filtered.length} task{filtered.length === 1 ? "" : "s"}</div>
+        </div>
+        <div className="overflow-hidden rounded-md border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary/50 text-xs uppercase tracking-wider text-muted-foreground">
+              <tr><Th>Task</Th><Th>Project</Th><Th>Status</Th><Th>Hours</Th><Th>{" "}</Th></tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No tasks match these filters.</td></tr>}
+              {filtered.map((t) => {
+                const proj = projects.find((p) => p.id === t.projectId);
+                const hrs = timeLogs.filter((l) => l.taskId === t.id).reduce((s, l) => s + l.hours, 0);
+                return (
+                  <tr key={t.id} className="border-t border-border">
+                    <Td>
+                      <div className="font-medium">{t.title}</div>
+                      {t.description && <div className="text-xs text-muted-foreground">{t.description}</div>}
+                    </Td>
+                    <Td className="text-muted-foreground">{proj?.name ?? "—"}</Td>
+                    <Td>
+                      <select
+                        value={t.status}
+                        onChange={(e) => updateStatus(t.id, e.target.value as Task["status"])}
+                        className="input h-8 py-0 text-xs"
+                      >
+                        {["Pending", "In Progress", "Done"].map((s) => <option key={s}>{s}</option>)}
+                      </select>
+                    </Td>
+                    <Td className="text-muted-foreground">{hrs.toFixed(1)}h</Td>
+                    <Td>
+                      <button onClick={() => setOpening(t)} className="btn-ghost">Open</button>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {opening && <TaskDetailModal task={opening} onClose={() => setOpening(null)} />}
+    </div>
+  );
+}
+
+function StatCard({ label, value, hint, accent }: { label: string; value: number | string; hint?: string; accent?: "primary" | "success" | "warning" }) {
+  const fg = accent === "primary" ? "var(--primary)" : accent === "success" ? "var(--success)" : accent === "warning" ? "oklch(0.55 0.16 75)" : "var(--foreground)";
+  return (
+    <div className="card p-4">
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-semibold" style={{ color: fg }}>{value}</div>
+      {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
+    </div>
+  );
+}
+
+/* ---------------- TASK DETAIL (comments + time logs) ---------------- */
+function TaskDetailModal({ task, onClose }: { task: Task; onClose: () => void }) {
+  const user = useAuth()!;
+  const comments = useStore(() => db.get().comments.filter((c) => c.taskId === task.id).sort((a, b) => a.createdAt - b.createdAt));
+  const logs = useStore(() => db.get().timeLogs.filter((l) => l.taskId === task.id).sort((a, b) => b.createdAt - a.createdAt));
+  const users = useStore(() => db.get().users.filter((u) => u.orgId === user.orgId));
+  const project = useStore(() => db.get().projects.find((p) => p.id === task.projectId));
+
+  const [body, setBody] = useState("");
+  const [hours, setHours] = useState("1");
+  const [note, setNote] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+
+  const canComment = can.commentOnTask(user, task);
+  const canLogTime = can.logTimeOnTask(user, task);
+  const totalHours = logs.reduce((s, l) => s + l.hours, 0);
+
+  const addComment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!body.trim()) return;
+    const c: TaskComment = { id: uid(), orgId: user.orgId, taskId: task.id, userId: user.id, body: body.trim(), createdAt: Date.now() };
+    update((d) => ({ ...d, comments: [...d.comments, c] }));
+    // notify assignee + (if different) PMs/admins involved
+    const recipients = new Set<string>();
+    if (task.assigneeId && task.assigneeId !== user.id) recipients.add(task.assigneeId);
+    db.get().users.filter((u) => u.orgId === user.orgId && (u.role === "pm" || u.role === "admin") && u.id !== user.id).forEach((u) => recipients.add(u.id));
+    recipients.forEach((rid) => notify({
+      orgId: user.orgId, userId: rid, kind: "task_comment",
+      title: `New comment on "${task.title}"`,
+      body: `${user.name}: ${body.trim().slice(0, 80)}`,
+    }));
+    setBody("");
+  };
+
+  const addLog = (e: React.FormEvent) => {
+    e.preventDefault();
+    const h = parseFloat(hours);
+    if (!isFinite(h) || h <= 0) return;
+    const l: TimeLog = { id: uid(), orgId: user.orgId, taskId: task.id, userId: user.id, hours: h, note: note.trim(), date, createdAt: Date.now() };
+    update((d) => ({ ...d, timeLogs: [...d.timeLogs, l] }));
+    setHours("1"); setNote("");
+  };
+
+  const deleteLog = (id: string) => {
+    update((d) => ({ ...d, timeLogs: d.timeLogs.filter((l) => l.id !== id) }));
+  };
+
+  return (
+    <Modal onClose={onClose} title={task.title}>
+      <div className="space-y-5">
+        <div className="text-xs text-muted-foreground">
+          {project?.name ?? "—"} · <StatusBadge status={task.status} /> · Total logged: <span className="font-medium text-foreground">{totalHours.toFixed(1)}h</span>
+        </div>
+        {task.description && <p className="text-sm">{task.description}</p>}
+
+        <section>
+          <h3 className="mb-2 text-sm font-semibold">Comments</h3>
+          <div className="space-y-2">
+            {comments.length === 0 && <p className="text-xs text-muted-foreground">No comments yet.</p>}
+            {comments.map((c) => {
+              const u = users.find((x) => x.id === c.userId);
+              return (
+                <div key={c.id} className="rounded-md border border-border bg-secondary/40 px-3 py-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium">{u?.name ?? "Unknown"}</span>
+                    <span className="text-muted-foreground">{timeAgo(c.createdAt)}</span>
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap text-sm">{c.body}</p>
+                </div>
+              );
+            })}
+          </div>
+          {canComment ? (
+            <form onSubmit={addComment} className="mt-3 flex gap-2">
+              <input value={body} onChange={(e) => setBody(e.target.value)} placeholder="Add a note or progress update…" className="input flex-1" />
+              <button type="submit" className="btn-primary">Post</button>
+            </form>
+          ) : (
+            <p className="mt-2 text-xs text-muted-foreground">Only the assignee, PMs, and admins can comment.</p>
+          )}
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-sm font-semibold">Time logs</h3>
+          <div className="space-y-1">
+            {logs.length === 0 && <p className="text-xs text-muted-foreground">No time logged yet.</p>}
+            {logs.map((l) => {
+              const u = users.find((x) => x.id === l.userId);
+              return (
+                <div key={l.id} className="flex items-center justify-between rounded-md border border-border px-3 py-1.5 text-sm">
+                  <div>
+                    <span className="font-medium">{l.hours}h</span>{" "}
+                    <span className="text-muted-foreground">· {l.date} · {u?.name ?? "—"}</span>
+                    {l.note && <div className="text-xs text-muted-foreground">{l.note}</div>}
+                  </div>
+                  {l.userId === user.id && (
+                    <button onClick={() => deleteLog(l.id)} className="text-xs text-muted-foreground hover:text-destructive">Delete</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {canLogTime ? (
+            <form onSubmit={addLog} className="mt-3 grid grid-cols-[80px_120px_1fr_auto] gap-2">
+              <input type="number" step="0.25" min="0.25" value={hours} onChange={(e) => setHours(e.target.value)} className="input" />
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input" />
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="What did you work on?" className="input" />
+              <button type="submit" className="btn-primary">Log</button>
+            </form>
+          ) : (
+            <p className="mt-2 text-xs text-muted-foreground">Only the assignee can log time on this task.</p>
+          )}
+        </section>
+
+        <div className="flex justify-end">
+          <button onClick={onClose} className="btn-ghost">Close</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /* ---------------- MEMBERS ---------------- */
 function MembersTab() {
   const user = useAuth()!;
@@ -141,7 +445,6 @@ function MembersTab() {
   const [open, setOpen] = useState(false);
 
   const canEdit = can.addMember(user.role);
-
 
   const remove = (id: string) => {
     if (id === user.id) return alert("You can't remove yourself.");
@@ -358,6 +661,7 @@ function TasksTab() {
   const users = useStore(() => db.get().users.filter((u) => u.orgId === user.orgId));
   const [editing, setEditing] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
+  const [opening, setOpening] = useState<Task | null>(null);
 
   const canManage = can.createTask(user.role);
 
@@ -395,7 +699,7 @@ function TasksTab() {
               return (
                 <tr key={t.id} className="border-t border-border">
                   <Td>
-                    <div className="font-medium">{t.title}</div>
+                    <button onClick={() => setOpening(t)} className="text-left font-medium hover:underline">{t.title}</button>
                     {t.description && <div className="text-xs text-muted-foreground">{t.description}</div>}
                   </Td>
                   <Td className="text-muted-foreground">{proj?.name ?? "—"}</Td>
@@ -411,14 +715,15 @@ function TasksTab() {
                     </select>
                   </Td>
                   <Td>
-                    {canManage ? (
-                      <div className="flex gap-2">
-                        <button onClick={() => setEditing(t)} className="btn-ghost">Edit</button>
-                        <button onClick={() => remove(t.id)} className="btn-danger">Delete</button>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
+                    <div className="flex gap-2">
+                      <button onClick={() => setOpening(t)} className="btn-ghost">Open</button>
+                      {canManage && (
+                        <>
+                          <button onClick={() => setEditing(t)} className="btn-ghost">Edit</button>
+                          <button onClick={() => remove(t.id)} className="btn-danger">Delete</button>
+                        </>
+                      )}
+                    </div>
                   </Td>
                 </tr>
               );
@@ -428,6 +733,7 @@ function TasksTab() {
       </div>
       {editing && <TaskModal task={editing} onClose={() => setEditing(null)} />}
       {creating && <TaskModal onClose={() => setCreating(false)} />}
+      {opening && <TaskDetailModal task={opening} onClose={() => setOpening(null)} />}
     </div>
   );
 }
@@ -444,10 +750,19 @@ function TaskModal({ task, onClose }: { task?: Task; onClose: () => void }) {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    const prevAssignee = task?.assigneeId;
     if (task) {
       update((d) => ({ ...d, tasks: d.tasks.map((t) => t.id === task.id ? { ...t, title, description, projectId, assigneeId, status } : t) }));
     } else {
       update((d) => ({ ...d, tasks: [...d.tasks, { id: uid(), orgId: user.orgId, title, description, projectId, assigneeId, status }] }));
+    }
+    // Notify newly assigned developer
+    if (assigneeId && assigneeId !== prevAssignee && assigneeId !== user.id) {
+      notify({
+        orgId: user.orgId, userId: assigneeId, kind: "task_assigned",
+        title: "New task assigned",
+        body: `${user.name} assigned you "${title}".`,
+      });
     }
     onClose();
   };
@@ -493,7 +808,15 @@ function LeavesTab() {
   const [creating, setCreating] = useState(false);
 
   const setStatus = (id: string, status: Leave["status"]) => {
+    const leave = db.get().leaves.find((l) => l.id === id);
     update((d) => ({ ...d, leaves: d.leaves.map((l) => l.id === id ? { ...l, status } : l) }));
+    if (leave && leave.userId !== user.id) {
+      notify({
+        orgId: user.orgId, userId: leave.userId, kind: "leave_status",
+        title: `Leave ${status.toLowerCase()}`,
+        body: `${user.name} ${status.toLowerCase()} your leave (${leave.from} → ${leave.to}).`,
+      });
+    }
   };
   const remove = (id: string, leave: Leave) => {
     if (user.role === "developer" && leave.status !== "Pending") return;
@@ -616,7 +939,7 @@ function StatusBadge({ status }: { status: string }) {
 function Modal({ children, onClose, title }: { children: React.ReactNode; onClose: () => void; title: string }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="card w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="card w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">✕</button>
@@ -627,5 +950,17 @@ function Modal({ children, onClose, title }: { children: React.ReactNode; onClos
   );
 }
 
+function timeAgo(ts: number) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
 // silence unused
 void ({} as User);
+void ({} as Notification);
