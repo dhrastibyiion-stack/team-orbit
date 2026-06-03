@@ -11,6 +11,12 @@ export const can = {
   viewProjects: (r: Role) => r === "admin" || r === "pm",
   viewTasks: (_r: Role) => true,
   viewLeaves: (_r: Role) => true,
+  viewWorkload: (r: Role) => r === "admin" || r === "pm",
+  viewSprints: (r: Role) => r === "admin" || r === "pm",
+  viewReports: (r: Role) => r === "admin" || r === "pm",
+
+  // Sprints
+  manageSprints: (r: Role) => r === "admin" || r === "pm",
 
   // Members
   addMember: (r: Role) => r === "admin",
