@@ -693,7 +693,7 @@ function TasksTab() {
         <table className="w-full text-sm">
           <thead className="bg-secondary/50 text-xs uppercase tracking-wider text-muted-foreground">
             <tr>
-              <Th>Task</Th><Th>Project</Th><Th>Assignee</Th><Th>Status</Th><Th>Actions</Th>
+              <Th>Task</Th><Th>Priority</Th><Th>Project</Th><Th>Assignee</Th><Th>Status</Th><Th>Actions</Th>
             </tr>
           </thead>
           <tbody>
