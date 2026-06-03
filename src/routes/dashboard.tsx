@@ -752,26 +752,30 @@ function TaskModal({ task, onClose }: { task?: Task; onClose: () => void }) {
   const user = useAuth()!;
   const projects = db.get().projects.filter((p) => p.orgId === user.orgId);
   const developers = db.get().users.filter((u) => u.orgId === user.orgId && u.role === "developer");
+  const allSprints = db.get().sprints.filter((s) => s.orgId === user.orgId);
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [projectId, setProjectId] = useState(task?.projectId ?? projects[0]?.id ?? "");
   const [assigneeId, setAssigneeId] = useState(task?.assigneeId ?? developers[0]?.id ?? "");
   const [status, setStatus] = useState<Task["status"]>(task?.status ?? "Pending");
+  const [priority, setPriority] = useState<Priority>(task?.priority ?? "Medium");
+  const [sprintId, setSprintId] = useState<string>(task?.sprintId ?? "");
+  const sprintsForProject = allSprints.filter((s) => s.projectId === projectId);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const prevAssignee = task?.assigneeId;
+    const payload = { title, description, projectId, assigneeId, status, priority, sprintId: sprintId || null };
     if (task) {
-      update((d) => ({ ...d, tasks: d.tasks.map((t) => t.id === task.id ? { ...t, title, description, projectId, assigneeId, status } : t) }));
+      update((d) => ({ ...d, tasks: d.tasks.map((t) => t.id === task.id ? { ...t, ...payload } : t) }));
     } else {
-      update((d) => ({ ...d, tasks: [...d.tasks, { id: uid(), orgId: user.orgId, title, description, projectId, assigneeId, status }] }));
+      update((d) => ({ ...d, tasks: [...d.tasks, { id: uid(), orgId: user.orgId, ...payload }] }));
     }
-    // Notify newly assigned developer
     if (assigneeId && assigneeId !== prevAssignee && assigneeId !== user.id) {
       notify({
         orgId: user.orgId, userId: assigneeId, kind: "task_assigned",
         title: "New task assigned",
-        body: `${user.name} assigned you "${title}".`,
+        body: `${user.name} assigned you "${title}" (${priority}).`,
       });
     }
     onClose();
@@ -784,7 +788,7 @@ function TaskModal({ task, onClose }: { task?: Task; onClose: () => void }) {
         <FormField label="Description"><textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="input" /></FormField>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Project">
-            <select required value={projectId} onChange={(e) => setProjectId(e.target.value)} className="input">
+            <select required value={projectId} onChange={(e) => { setProjectId(e.target.value); setSprintId(""); }} className="input">
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </FormField>
@@ -795,11 +799,24 @@ function TaskModal({ task, onClose }: { task?: Task; onClose: () => void }) {
             </select>
           </FormField>
         </div>
-        <FormField label="Status">
-          <select value={status} onChange={(e) => setStatus(e.target.value as Task["status"])} className="input">
-            {["Pending", "In Progress", "Done"].map((s) => <option key={s}>{s}</option>)}
-          </select>
-        </FormField>
+        <div className="grid grid-cols-3 gap-3">
+          <FormField label="Priority">
+            <select value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="input">
+              {["High", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Status">
+            <select value={status} onChange={(e) => setStatus(e.target.value as Task["status"])} className="input">
+              {["Pending", "In Progress", "Done"].map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Sprint">
+            <select value={sprintId} onChange={(e) => setSprintId(e.target.value)} className="input">
+              <option value="">— None —</option>
+              {sprintsForProject.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </FormField>
+        </div>
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
           <button type="submit" className="btn-primary">Save task</button>
