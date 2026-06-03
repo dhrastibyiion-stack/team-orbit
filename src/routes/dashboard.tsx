@@ -123,7 +123,10 @@ function Dashboard() {
             {tab === "mywork" && <MyWorkTab />}
             {tab === "members" && <MembersTab />}
             {tab === "projects" && <ProjectsTab />}
+            {tab === "sprints" && <SprintsTab />}
             {tab === "tasks" && <TasksTab />}
+            {tab === "workload" && <WorkloadTab />}
+            {tab === "reports" && <ReportsTab />}
             {tab === "leaves" && <LeavesTab />}
           </div>
         </main>
