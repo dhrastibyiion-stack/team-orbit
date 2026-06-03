@@ -988,6 +988,248 @@ function timeAgo(ts: number) {
   return `${d}d ago`;
 }
 
-// silence unused
-void ({} as User);
-void ({} as Notification);
+function PriorityBadge({ priority }: { priority?: Priority }) {
+  const p = priority ?? "Medium";
+  const c = p === "High"
+    ? { bg: "color-mix(in oklab, var(--destructive) 16%, transparent)", fg: "var(--destructive)" }
+    : p === "Low"
+    ? { bg: "var(--secondary)", fg: "var(--secondary-foreground)" }
+    : { bg: "color-mix(in oklab, var(--warning) 22%, transparent)", fg: "oklch(0.45 0.15 75)" };
+  return <span className="badge" style={{ backgroundColor: c.bg, color: c.fg }}>{p}</span>;
+}
+
+/* ---------------- SPRINTS ---------------- */
+function SprintsTab() {
+  const user = useAuth()!;
+  const sprints = useStore(() => db.get().sprints.filter((s) => s.orgId === user.orgId));
+  const projects = useStore(() => db.get().projects.filter((p) => p.orgId === user.orgId));
+  const tasks = useStore(() => db.get().tasks.filter((t) => t.orgId === user.orgId));
+  const [editing, setEditing] = useState<Sprint | null>(null);
+  const [creating, setCreating] = useState(false);
+  const canManage = can.manageSprints(user.role);
+
+  const remove = (id: string) => {
+    if (!confirm("Delete this sprint? Tasks will be unassigned from it.")) return;
+    update((d) => ({
+      ...d,
+      sprints: d.sprints.filter((s) => s.id !== id),
+      tasks: d.tasks.map((t) => t.sprintId === id ? { ...t, sprintId: null } : t),
+    }));
+  };
+
+  return (
+    <div>
+      {canManage && (
+        <div className="mb-4 flex justify-end">
+          <button onClick={() => setCreating(true)} className="btn-primary">+ New sprint</button>
+        </div>
+      )}
+      <div className="grid gap-4 md:grid-cols-2">
+        {sprints.length === 0 && <p className="text-sm text-muted-foreground">No sprints yet.</p>}
+        {sprints.map((s) => {
+          const proj = projects.find((p) => p.id === s.projectId);
+          const sTasks = tasks.filter((t) => t.sprintId === s.id);
+          const done = sTasks.filter((t) => t.status === "Done").length;
+          const pct = sTasks.length === 0 ? 0 : Math.round((done / sTasks.length) * 100);
+          const now = Date.now();
+          const isActive = new Date(s.startDate).getTime() <= now && now <= new Date(s.endDate).getTime() + 864e5;
+          return (
+            <div key={s.id} className="card p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold">{s.name}</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">{proj?.name ?? "—"} · {s.startDate} → {s.endDate}</p>
+                  {s.goal && <p className="mt-2 text-sm">{s.goal}</p>}
+                </div>
+                <StatusBadge status={isActive ? "Active" : now < new Date(s.startDate).getTime() ? "Planning" : "Completed"} />
+              </div>
+              <div className="mt-4">
+                <div className="mb-1 flex justify-between text-xs text-muted-foreground">
+                  <span>{done} / {sTasks.length} tasks done</span>
+                  <span>{pct}%</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                  <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--gradient-primary)" }} />
+                </div>
+              </div>
+              {canManage && (
+                <div className="mt-4 flex justify-end gap-2">
+                  <button onClick={() => setEditing(s)} className="btn-ghost">Edit</button>
+                  <button onClick={() => remove(s.id)} className="btn-danger">Delete</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {creating && <SprintModal onClose={() => setCreating(false)} />}
+      {editing && <SprintModal sprint={editing} onClose={() => setEditing(null)} />}
+    </div>
+  );
+}
+
+function SprintModal({ sprint, onClose }: { sprint?: Sprint; onClose: () => void }) {
+  const user = useAuth()!;
+  const projects = db.get().projects.filter((p) => p.orgId === user.orgId);
+  const today = new Date().toISOString().slice(0, 10);
+  const [name, setName] = useState(sprint?.name ?? "");
+  const [projectId, setProjectId] = useState(sprint?.projectId ?? projects[0]?.id ?? "");
+  const [startDate, setStartDate] = useState(sprint?.startDate ?? today);
+  const [endDate, setEndDate] = useState(sprint?.endDate ?? today);
+  const [goal, setGoal] = useState(sprint?.goal ?? "");
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (sprint) {
+      update((d) => ({ ...d, sprints: d.sprints.map((s) => s.id === sprint.id ? { ...s, name, projectId, startDate, endDate, goal } : s) }));
+    } else {
+      update((d) => ({ ...d, sprints: [...d.sprints, { id: uid(), orgId: user.orgId, name, projectId, startDate, endDate, goal }] }));
+    }
+    onClose();
+  };
+
+  return (
+    <Modal onClose={onClose} title={sprint ? "Edit sprint" : "New sprint"}>
+      <form onSubmit={submit} className="space-y-4">
+        <FormField label="Name"><input required value={name} onChange={(e) => setName(e.target.value)} className="input" placeholder="Sprint 1" /></FormField>
+        <FormField label="Project">
+          <select required value={projectId} onChange={(e) => setProjectId(e.target.value)} className="input">
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </FormField>
+        <div className="grid grid-cols-2 gap-3">
+          <FormField label="Start"><input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input" /></FormField>
+          <FormField label="End"><input type="date" required value={endDate} onChange={(e) => setEndDate(e.target.value)} className="input" /></FormField>
+        </div>
+        <FormField label="Goal (optional)"><textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={2} className="input" /></FormField>
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
+          <button type="submit" className="btn-primary">Save sprint</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ---------------- WORKLOAD ---------------- */
+function WorkloadTab() {
+  const user = useAuth()!;
+  const devs = useStore(() => db.get().users.filter((u) => u.orgId === user.orgId && u.role === "developer"));
+  const tasks = useStore(() => db.get().tasks.filter((t) => t.orgId === user.orgId));
+  const logs = useStore(() => db.get().timeLogs.filter((l) => l.orgId === user.orgId));
+
+  const weekAgo = Date.now() - 7 * 864e5;
+  const rows = devs.map((d) => {
+    const mine = tasks.filter((t) => t.assigneeId === d.id);
+    const open = mine.filter((t) => t.status !== "Done").length;
+    const highOpen = mine.filter((t) => t.status !== "Done" && t.priority === "High").length;
+    const hoursWeek = logs.filter((l) => l.userId === d.id && new Date(l.date).getTime() >= weekAgo).reduce((s, l) => s + l.hours, 0);
+    return { user: d, total: mine.length, open, highOpen, pending: mine.filter((t) => t.status === "Pending").length, inProgress: mine.filter((t) => t.status === "In Progress").length, done: mine.filter((t) => t.status === "Done").length, hoursWeek };
+  }).sort((a, b) => b.open - a.open);
+  const maxOpen = Math.max(1, ...rows.map((r) => r.open));
+
+  return (
+    <div className="card overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-secondary/50 text-xs uppercase tracking-wider text-muted-foreground">
+          <tr><Th>Developer</Th><Th>Load</Th><Th>Pending</Th><Th>In Progress</Th><Th>Done</Th><Th>High prio open</Th><Th>Hours / week</Th></tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">No developers in this org.</td></tr>}
+          {rows.map((r) => (
+            <tr key={r.user.id} className="border-t border-border">
+              <Td>
+                <div className="font-medium">{r.user.name}</div>
+                <div className="text-xs text-muted-foreground">{r.user.email}</div>
+              </Td>
+              <Td>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-32 overflow-hidden rounded-full bg-secondary">
+                    <div className="h-full" style={{ width: `${(r.open / maxOpen) * 100}%`, background: r.open >= maxOpen ? "var(--destructive)" : "var(--gradient-primary)" }} />
+                  </div>
+                  <span className="text-xs text-muted-foreground">{r.open} open</span>
+                </div>
+              </Td>
+              <Td>{r.pending}</Td>
+              <Td>{r.inProgress}</Td>
+              <Td className="text-muted-foreground">{r.done}</Td>
+              <Td>{r.highOpen > 0 ? <PriorityBadge priority="High" /> : "—"}{r.highOpen > 1 && <span className="ml-1 text-xs text-muted-foreground">×{r.highOpen}</span>}</Td>
+              <Td className="font-medium">{r.hoursWeek.toFixed(1)}h</Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ---------------- REPORTS ---------------- */
+function ReportsTab() {
+  const user = useAuth()!;
+  const projects = useStore(() => db.get().projects.filter((p) => p.orgId === user.orgId));
+  const tasks = useStore(() => db.get().tasks.filter((t) => t.orgId === user.orgId));
+  const logs = useStore(() => db.get().timeLogs.filter((l) => l.orgId === user.orgId));
+
+  const totalTasks = tasks.length;
+  const doneTasks = tasks.filter((t) => t.status === "Done").length;
+  const totalHours = logs.reduce((s, l) => s + l.hours, 0);
+  const velocity = (() => {
+    const weekAgo = Date.now() - 7 * 864e5;
+    return logs.filter((l) => new Date(l.date).getTime() >= weekAgo).length;
+  })();
+
+  const perProject = projects.map((p) => {
+    const pt = tasks.filter((t) => t.projectId === p.id);
+    const done = pt.filter((t) => t.status === "Done").length;
+    const hours = logs.filter((l) => pt.some((t) => t.id === l.taskId)).reduce((s, l) => s + l.hours, 0);
+    const pct = pt.length === 0 ? 0 : Math.round((done / pt.length) * 100);
+    return { p, total: pt.length, done, hours, pct };
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard label="Total tasks" value={totalTasks} />
+        <StatCard label="Completed" value={doneTasks} accent="success" hint={`${totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0}% done`} />
+        <StatCard label="Hours logged" value={totalHours.toFixed(1)} accent="primary" />
+        <StatCard label="Logs this week" value={velocity} hint="team velocity" />
+      </div>
+
+      <div className="card p-4">
+        <h3 className="mb-3 text-sm font-semibold">Project progress</h3>
+        <div className="space-y-3">
+          {perProject.length === 0 && <p className="text-xs text-muted-foreground">No projects yet.</p>}
+          {perProject.map(({ p, total, done, hours, pct }) => (
+            <div key={p.id}>
+              <div className="mb-1 flex items-center justify-between text-sm">
+                <span className="font-medium">{p.name}</span>
+                <span className="text-xs text-muted-foreground">{done}/{total} tasks · {hours.toFixed(1)}h</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--gradient-primary)" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <h3 className="mb-3 text-sm font-semibold">Task status breakdown</h3>
+        <div className="grid grid-cols-3 gap-3">
+          {(["Pending", "In Progress", "Done"] as const).map((s) => {
+            const n = tasks.filter((t) => t.status === s).length;
+            const pct = totalTasks ? Math.round((n / totalTasks) * 100) : 0;
+            return (
+              <div key={s} className="rounded-md border border-border p-3">
+                <div className="text-xs text-muted-foreground">{s}</div>
+                <div className="mt-1 text-2xl font-semibold">{n}</div>
+                <div className="text-xs text-muted-foreground">{pct}% of all tasks</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
