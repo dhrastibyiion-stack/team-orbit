@@ -664,7 +664,8 @@ function ProjectModal({ project, onClose }: { project?: Project; onClose: () => 
 function TasksTab() {
   const user = useAuth()!;
   const allTasks = useStore(() => db.get().tasks.filter((t) => t.orgId === user.orgId));
-  const tasks = user.role === "developer" ? allTasks.filter((t) => t.assigneeId === user.id) : allTasks;
+  const visible = user.role === "developer" ? allTasks.filter((t) => t.assigneeId === user.id) : allTasks;
+  const tasks = sortByPriority(visible);
   const projects = useStore(() => db.get().projects.filter((p) => p.orgId === user.orgId));
   const users = useStore(() => db.get().users.filter((u) => u.orgId === user.orgId));
   const [editing, setEditing] = useState<Task | null>(null);
