@@ -698,7 +698,7 @@ function TasksTab() {
           </thead>
           <tbody>
             {tasks.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">
                 {user.role === "developer" ? "No tasks assigned to you yet." : "No tasks yet."}
               </td></tr>
             )}
@@ -711,6 +711,7 @@ function TasksTab() {
                     <button onClick={() => setOpening(t)} className="text-left font-medium hover:underline">{t.title}</button>
                     {t.description && <div className="text-xs text-muted-foreground">{t.description}</div>}
                   </Td>
+                  <Td><PriorityBadge priority={t.priority} /></Td>
                   <Td className="text-muted-foreground">{proj?.name ?? "—"}</Td>
                   <Td className="text-muted-foreground">{assignee?.name ?? "Unassigned"}</Td>
                   <Td>
