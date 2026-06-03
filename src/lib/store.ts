@@ -42,6 +42,7 @@ function read(): DB {
       comments: parsed.comments ?? [],
       timeLogs: parsed.timeLogs ?? [],
       notifications: parsed.notifications ?? [],
+      sprints: parsed.sprints ?? [],
     };
   } catch {
     return empty;
