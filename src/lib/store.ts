@@ -21,12 +21,13 @@ type DB = {
   comments: TaskComment[];
   timeLogs: TimeLog[];
   notifications: Notification[];
+  sprints: Sprint[];
   sessionUserId: string | null;
 };
 
 const KEY = "flowdesk_db_v1";
 
-const empty: DB = { users: [], orgs: [], projects: [], tasks: [], leaves: [], comments: [], timeLogs: [], notifications: [], sessionUserId: null };
+const empty: DB = { users: [], orgs: [], projects: [], tasks: [], leaves: [], comments: [], timeLogs: [], notifications: [], sprints: [], sessionUserId: null };
 
 function read(): DB {
   if (typeof window === "undefined") return empty;
