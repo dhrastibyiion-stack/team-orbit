@@ -1,8 +1,13 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth, useStore } from "@/lib/use-store";
-import { db, signOut, update, uid, rollback, notify, type Role, type Project, type Task, type Leave, type User, type TaskComment, type TimeLog, type Notification } from "@/lib/store";
+import { db, signOut, update, uid, rollback, notify, type Role, type Project, type Task, type Leave, type User, type TaskComment, type TimeLog, type Notification, type Priority, type Sprint } from "@/lib/store";
 import { can, visibleTabs, defaultTabFor, type TabId } from "@/lib/permissions";
+
+const PRIORITY_RANK: Record<Priority, number> = { High: 0, Medium: 1, Low: 2 };
+function sortByPriority<T extends { priority?: Priority }>(arr: T[]): T[] {
+  return [...arr].sort((a, b) => (PRIORITY_RANK[a.priority ?? "Medium"]) - (PRIORITY_RANK[b.priority ?? "Medium"]));
+}
 
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
