@@ -50,14 +50,17 @@ export const can = {
   },
 };
 
-export type TabId = "mywork" | "members" | "projects" | "tasks" | "leaves";
+export type TabId = "mywork" | "members" | "projects" | "tasks" | "leaves" | "workload" | "sprints" | "reports";
 
 export function visibleTabs(role: Role) {
   const tabs: { id: TabId; label: string }[] = [];
   if (can.viewMyWork(role)) tabs.push({ id: "mywork", label: "My Work" });
   if (can.viewMembers(role)) tabs.push({ id: "members", label: "Members" });
   if (can.viewProjects(role)) tabs.push({ id: "projects", label: "Projects" });
+  if (can.viewSprints(role)) tabs.push({ id: "sprints", label: "Sprints" });
   if (can.viewTasks(role)) tabs.push({ id: "tasks", label: "Tasks" });
+  if (can.viewWorkload(role)) tabs.push({ id: "workload", label: "Workload" });
+  if (can.viewReports(role)) tabs.push({ id: "reports", label: "Reports" });
   if (can.viewLeaves(role)) tabs.push({ id: "leaves", label: "Leave Requests" });
   return tabs;
 }
